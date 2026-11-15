@@ -29,6 +29,7 @@ Item {
   property bool stateKnown: false
   property var devices: []
   property string color: ""
+  property int brightness: 100
   // What the last command said, shown under the swatches: a failure is red.
   property string note: ""
   property bool noteError: false
@@ -62,6 +63,7 @@ Item {
     cmd.command = [root.cli].concat(item.args)
     cmd.running = true
   }
+  function setBrightness(pct) { root.brightness = pct; root.run(["brightness", String(pct)], "Brightness " + pct + "%") }
   function setColor(hex, device) {
     var args = ["color", hex]
     if (device !== undefined) args.push(String(device))
@@ -75,7 +77,8 @@ Item {
     function close(): void { root.close() }
     function color(hex: string): string { root.setColor(hex.replace("#", "")); return "ok" }
     function off(): string { root.setColor("000000"); return "ok" }
-    function state(): string { return JSON.stringify({ shown: root.shown, installed: root.installed, devices: root.devices, color: root.color }) }
+    function state(): string { return JSON.stringify({ shown: root.shown, installed: root.installed, devices: root.devices, color: root.color, brightness: root.brightness }) }
+    function brightness(percent: string): string { root.setBrightness(parseInt(percent)); return "ok" }
   }
 
   Process {
@@ -89,6 +92,7 @@ Item {
           root.stateKnown = true
           root.devices = s.devices
           root.color = s.color
+          if (!slider.pressed) root.brightness = s.brightness
         } catch (e) { console.log("startopenrgb state:", e) }
       }
     }
@@ -258,6 +262,60 @@ Item {
             Button {
               text: "Lights off"
               onClicked: root.setColor("000000")
+            }
+          }
+
+          // Brightness: scales the colour, so it works on every device.
+          RowLayout {
+            Layout.fillWidth: true
+            spacing: Style.space(10)
+            Text {
+              text: "Brightness"
+              color: Color.foreground
+              font.family: Style.font.family
+              font.pixelSize: Style.font.body
+            }
+            Item {
+              id: slider
+              Layout.fillWidth: true
+              height: Style.space(24)
+              readonly property bool pressed: drag.pressed
+              property int value: root.brightness
+              Rectangle {
+                anchors.verticalCenter: parent.verticalCenter
+                width: parent.width
+                height: Style.space(6)
+                radius: height / 2
+                color: Util.alpha(Color.foreground, 0.14)
+                Rectangle { width: parent.width * slider.value / 100; height: parent.height; radius: parent.radius; color: Color.accent }
+              }
+              Rectangle {
+                x: (slider.width - width) * slider.value / 100
+                anchors.verticalCenter: parent.verticalCenter
+                width: Style.space(18)
+                height: width
+                radius: width / 2
+                color: Color.menu.background
+                border.width: Style.space(2)
+                border.color: Color.accent
+              }
+              MouseArea {
+                id: drag
+                anchors.fill: parent
+                cursorShape: Qt.PointingHandCursor
+                function at(x) { return Math.max(0, Math.min(100, Math.round(x / slider.width * 100))) }
+                onPressed: mouse => slider.value = at(mouse.x)
+                onPositionChanged: mouse => { if (pressed) slider.value = at(mouse.x) }
+                onReleased: root.setBrightness(slider.value)
+              }
+            }
+            Text {
+              Layout.preferredWidth: Style.space(40)
+              horizontalAlignment: Text.AlignRight
+              text: slider.value + "%"
+              color: Color.muted
+              font.family: Style.font.family
+              font.pixelSize: Style.font.caption
             }
           }
 

@@ -2,7 +2,7 @@
 
 Set the colour of your machine's RGB lights from Omarchy. A plugin for the Omarchy shell (Quickshell/QML) that drives [OpenRGB](https://openrgb.org) through a small command-line tool.
 
-- A window with ten preset colours, any `RRGGBB` colour, and **Lights off**.
+- A window with ten preset colours, any `RRGGBB` colour, a brightness slider (it scales the colour, so it works on every device) and **Lights off**.
 - The colour you choose is saved and put back at login. The plugin keeps an OpenRGB server running (OpenRGB probes the hardware for about a minute on every plain call; a server does it once), so the window and the CLI answer at once; the lights show up in the window a minute after login.
 - If OpenRGB is not installed, the window offers to install it (it opens a terminal for your sudo password, installs the package and reloads udev).
 - Optional bar icon: left click opens the window, right click turns the lights off.
