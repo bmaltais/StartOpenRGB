@@ -34,6 +34,12 @@ Item {
   property string note: ""
   property bool noteError: false
   property bool busy: false
+  // OpenRGB probes the hardware for about a minute after the server starts: no lights yet is "looking", not "none".
+  property bool scanGaveUp: false
+  onDevicesChanged: if (root.devices.length > 0) root.scanGaveUp = false
+  Timer { interval: 120000; running: root.installed && root.stateKnown && root.devices.length === 0 && !root.scanGaveUp; onTriggered: root.scanGaveUp = true }
+  // Brightness scales the saved colour: with the lights off, or no colour yet, there is nothing to scale.
+  readonly property bool brightnessUsable: root.color !== "" && root.color !== "000000"
 
   function focusedScreen() {
     var monitor = Hyprland.focusedMonitor
@@ -43,7 +49,11 @@ Item {
     }
     return screens.length ? screens[0] : null
   }
-  function show() { win.screen = root.focusedScreen(); root.note = ""; root.shown = true; root.refresh() }
+  function show() {
+    win.screen = root.focusedScreen(); root.note = ""; root.shown = true; root.refresh()
+    // Tab starts from the top every time, not from wherever the last visit left the focus.
+    Qt.callLater(function () { frame.forceActiveFocus() })
+  }
   function close() { root.shown = false }
   function refresh() { stateProc.running = true }
 
@@ -171,7 +181,7 @@ Item {
           }
           Text {
             text: !root.installed ? "OPENRGB NOT INSTALLED"
-              : root.devices.length === 0 ? "NO LIGHTS FOUND"
+              : root.devices.length === 0 ? (root.scanGaveUp ? "NO LIGHTS FOUND" : "LOOKING FOR LIGHTS…")
               : root.devices.length + (root.devices.length === 1 ? " DEVICE" : " DEVICES")
             color: Color.muted
             font.family: Style.font.family
@@ -219,6 +229,20 @@ Item {
                 color: "#" + modelData
                 border.width: root.color === modelData ? Style.space(3) : Style.normalBorderWidth
                 border.color: root.color === modelData ? Color.accent : Util.alpha(Color.foreground, 0.3)
+                activeFocusOnTab: true
+                Keys.onReturnPressed: root.setColor(modelData)
+                Keys.onEnterPressed: root.setColor(modelData)
+                Keys.onSpacePressed: root.setColor(modelData)
+                // The focus ring sits outside the swatch, so it never hides the selected ring.
+                Rectangle {
+                  visible: parent.activeFocus
+                  anchors.fill: parent
+                  anchors.margins: -Style.space(4)
+                  radius: parent.radius + Style.space(4)
+                  color: "transparent"
+                  border.width: Style.space(2)
+                  border.color: Color.foreground
+                }
                 MouseArea {
                   anchors.fill: parent
                   cursorShape: Qt.PointingHandCursor
@@ -249,7 +273,12 @@ Item {
                 font.pixelSize: Style.font.body
                 maximumLength: 7
                 selectByMouse: true
-                onAccepted: if (/^#?[0-9a-fA-F]{6}$/.test(text)) root.setColor(text.replace("#", ""))
+                activeFocusOnTab: true
+                onTextEdited: if (root.noteError) root.note = ""
+                onAccepted: {
+                  if (/^#?[0-9a-fA-F]{6}$/.test(text)) root.setColor(text.replace("#", ""))
+                  else { root.noteError = true; root.note = "Use six hex digits, like ff8000" }
+                }
                 Text {
                   visible: hex.text === "" && !hex.activeFocus
                   anchors.verticalCenter: parent.verticalCenter
@@ -261,6 +290,7 @@ Item {
             }
             Button {
               text: "Lights off"
+              activeFocusOnTab: true
               onClicked: root.setColor("000000")
             }
           }
@@ -279,6 +309,11 @@ Item {
               id: slider
               Layout.fillWidth: true
               height: Style.space(24)
+              enabled: root.brightnessUsable
+              opacity: root.brightnessUsable ? 1 : 0.4
+              activeFocusOnTab: true
+              Keys.onLeftPressed: { slider.value = Math.max(0, slider.value - 5); root.setBrightness(slider.value) }
+              Keys.onRightPressed: { slider.value = Math.min(100, slider.value + 5); root.setBrightness(slider.value) }
               readonly property bool pressed: drag.pressed
               property int value: root.brightness
               Rectangle {
@@ -296,23 +331,23 @@ Item {
                 height: width
                 radius: width / 2
                 color: Color.menu.background
-                border.width: Style.space(2)
-                border.color: Color.accent
+                border.width: slider.activeFocus ? Style.space(3) : Style.space(2)
+                border.color: slider.activeFocus ? Color.foreground : Color.accent
               }
               MouseArea {
                 id: drag
                 anchors.fill: parent
                 cursorShape: Qt.PointingHandCursor
                 function at(x) { return Math.max(0, Math.min(100, Math.round(x / slider.width * 100))) }
-                onPressed: mouse => slider.value = at(mouse.x)
+                onPressed: mouse => { slider.forceActiveFocus(); slider.value = at(mouse.x) }
                 onPositionChanged: mouse => { if (pressed) slider.value = at(mouse.x) }
                 onReleased: root.setBrightness(slider.value)
               }
             }
             Text {
-              Layout.preferredWidth: Style.space(40)
+              Layout.preferredWidth: Style.space(84)
               horizontalAlignment: Text.AlignRight
-              text: slider.value + "%"
+              text: root.brightnessUsable ? slider.value + "%" : "pick a colour"
               color: Color.muted
               font.family: Style.font.family
               font.pixelSize: Style.font.caption

@@ -140,7 +140,7 @@ cmd_brightness() {
   fi
   local hex
   hex=$(saved_color)
-  save_config "${hex:-ffffff}" "$((10#$pct))"
+  save_config "$hex" "$((10#$pct))"
   [[ -n $hex ]] && apply "$(scale_hex "$hex" "$((10#$pct))")"
   return 0
 }
