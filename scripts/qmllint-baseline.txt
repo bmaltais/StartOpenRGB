@@ -1,0 +1,27 @@
+BarWidget.qml	import	BarIconButton was not found. Did you add all imports and dependencies?
+BarWidget.qml	import	Failed to import qs.Commons. Are your import paths set up properly?
+BarWidget.qml	import	Failed to import qs.Ui. Are your import paths set up properly?
+BarWidget.qml	import	Warnings occurred while importing module "qs.Commons":
+BarWidget.qml	import	Warnings occurred while importing module "qs.Ui":
+BarWidget.qml	inheritance-cycle	BarWidget is part of an inheritance cycle: BarWidget -> BarWidget
+BarWidget.qml	type-instantiated-recursively	Type "BarWidget" can't be instantiated recursively
+BarWidget.qml	unqualified	anchors
+BarWidget.qml	unqualified	parent
+BarWidget.qml	unresolved-type	Type BarWidget is used but it is not resolved
+BarWidget.qml	unresolved-type	Type anchors is used but it is not resolved
+Service.qml	Quick.layout-positioning	Detected height on an item that is managed by a layout. This is undefined behavior; use implictHeight or Layout.preferredHeight instead.
+Service.qml	block-scope-var-declaration	var declaration in block scope is hoisted to function scope Replace it with const or let to silence the warning 
+Service.qml	import	Button was not found. Did you add all imports and dependencies?
+Service.qml	missing-property	Member "accent" not found on type "QQuickColor"
+Service.qml	missing-property	Member "foreground" not found on type "QQuickColor"
+Service.qml	missing-property	Member "menu" not found on type "QQuickColor"
+Service.qml	missing-property	Member "muted" not found on type "QQuickColor"
+Service.qml	missing-property	Member "urgent" not found on type "QQuickColor"
+Service.qml	uncreatable-type	Type PanelWindow is not creatable.
+Service.qml	unqualified	Style
+Service.qml	unqualified	Util
+Service.qml	unqualified	anchors
+Service.qml	unqualified	modelData
+Service.qml	unqualified	parent
+Service.qml	unqualified	root
+Service.qml	unresolved-type	Type anchors is used but it is not resolved
