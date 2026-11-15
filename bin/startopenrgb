@@ -1,0 +1,179 @@
+#!/usr/bin/env bash
+# StartOpenRGB: set the lights of the machine through OpenRGB.
+# This is the command-line half of the plugin; Service.qml calls it for everything
+# and parses the JSON that `state` prints. STARTOPENRGB_DEMO=1 serves fixture devices
+# and touches no hardware (the test session sets it).
+
+set -euo pipefail
+
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/startopenrgb"
+CONFIG="$CONFIG_DIR/config"
+DEMO=${STARTOPENRGB_DEMO:-0}
+
+usage() {
+  cat <<'USAGE'
+Usage: startopenrgb <command>
+
+  state                 JSON: whether OpenRGB is installed, the devices, the saved colour
+  install               install OpenRGB if it is missing (opens a terminal for the sudo password)
+  color HEX [DEVICE]    set every device (or device number DEVICE) to HEX, e.g. 0000ff; saved for next login
+  off                   turn every light off (same as: color 000000)
+  serve                 run the OpenRGB server (it probes the hardware once, so every other call is fast), then restore the saved colour; the plugin keeps it running
+  restore               apply the saved colour now
+  mode MODE [DEVICE]    set a device's mode by name, e.g. rainbow
+USAGE
+}
+
+# In demo mode OpenRGB counts as missing while the file demo-missing exists, until `install` removes it.
+installed() {
+  if [[ $DEMO == 1 ]]; then [[ ! -f $CONFIG_DIR/demo-missing ]]; else command -v openrgb >/dev/null 2>&1; fi
+}
+
+need_openrgb() {
+  installed || { echo "OpenRGB is not installed: run 'startopenrgb install'" >&2; exit 2; }
+}
+
+port_open() { (exec 3<>/dev/tcp/127.0.0.1/6742) 2>/dev/null; }
+
+valid_hex() { [[ ${1:-} =~ ^[0-9a-fA-F]{6}$ ]]; }
+
+saved_color() {
+  [[ -f $CONFIG ]] || return 0
+  sed -n 's/^COLOR=\([0-9a-fA-F]\{6\}\)$/\1/p' "$CONFIG" | head -n1
+}
+
+save_color() {
+  mkdir -p "$CONFIG_DIR"
+  printf 'COLOR=%s\n' "$1" >"$CONFIG"
+}
+
+# "index<TAB>name" per device.
+list_devices() {
+  if [[ $DEMO == 1 ]]; then
+    printf '0\tDemo RAM\n1\tDemo graphics card\n2\tDemo motherboard\n'
+    return
+  fi
+  # Without a server this would probe the hardware for a minute: no devices yet is the honest answer.
+  port_open || return 0
+  openrgb --list-devices 2>/dev/null | sed -n 's/^\([0-9]\+\): \(.*\)$/\1\t\2/p'
+}
+
+cmd_state() {
+  local ok=false devices='[]'
+  installed && ok=true
+  if [[ $ok == true ]]; then
+    devices=$(list_devices | jq -R -s -c 'split("\n") | map(select(length > 0) | split("\t") | {index: (.[0] | tonumber), name: .[1]})')
+  fi
+  jq -n -c --argjson installed "$ok" --argjson devices "$devices" --arg color "$(saved_color)" \
+    '{installed: $installed, devices: $devices, color: $color}'
+}
+
+SELF="$(readlink -f -- "${BASH_SOURCE[0]}")"
+
+# Installing needs the user's sudo password, so it runs in a floating terminal the user can type into.
+cmd_install() {
+  if installed; then echo "OpenRGB is already installed"; return; fi
+  if [[ $DEMO == 1 ]]; then rm -f "$CONFIG_DIR/demo-missing"; return; fi
+  exec omarchy-launch-floating-terminal-with-presentation "$(printf '%q ' "$SELF" install-now)"
+}
+
+# What the terminal runs: the package, then udev so the lights can be reached without root.
+cmd_install_now() {
+  omarchy-pkg-add openrgb
+  sudo udevadm control --reload
+  sudo udevadm trigger
+  echo "OpenRGB installed"
+}
+
+# Static first, then Direct, then whatever mode the device is in: not every device has the same names.
+apply() {
+  local hex=$1 dev=${2:-}
+  [[ $DEMO == 1 ]] && return 0
+  local args=() mode
+  [[ -n $dev ]] && args=(-d "$dev")
+  for mode in static direct; do
+    if openrgb "${args[@]}" -m "$mode" -c "$hex" >/dev/null 2>&1; then return 0; fi
+  done
+  openrgb "${args[@]}" -c "$hex" >/dev/null
+}
+
+cmd_color() {
+  need_openrgb
+  local hex=${1:-} dev=${2:-}
+  valid_hex "$hex" || { echo "colour must be six hex digits, like 0000ff" >&2; exit 1; }
+  [[ -z $dev || $dev =~ ^[0-9]+$ ]] || { echo "device must be a number from 'startopenrgb state'" >&2; exit 1; }
+  hex=${hex,,}
+  apply "$hex" "$dev"
+  # Remember a colour for all the lights; one device's colour is not what login should restore.
+  [[ -z $dev ]] && save_color "$hex"
+  return 0
+}
+
+cmd_restore() {
+  need_openrgb
+  local hex
+  hex=$(saved_color)
+  [[ -n $hex ]] || return 0
+  apply "$hex"
+}
+
+# Probing the hardware takes about a minute, and every plain `openrgb` call would do it again. A server does it once and
+# openrgb connects to a local one by itself, so the window and the CLI are fast. Restore waits until devices stop appearing.
+cmd_serve() {
+  need_openrgb
+  [[ $DEMO == 1 ]] && return 0
+  local server=0
+  trap '(( server > 0 )) && kill "$server" 2>/dev/null || true' EXIT
+  # Start our server; if the port is already held (a server of another program, or one that is still shutting down) wait
+  # for it to be free or answering. Without a server, every call below would probe the hardware itself.
+  for _ in 1 2 3 4 5; do
+    if port_open; then break; fi
+    openrgb --server --noautoconnect >/dev/null 2>&1 &
+    server=$!
+    local waited=0
+    until port_open; do
+      sleep 1
+      kill -0 "$server" 2>/dev/null || break
+      (( ++waited < 30 )) || break
+    done
+    port_open && break
+    sleep 3
+  done
+  port_open || { echo "OpenRGB's server did not start" >&2; exit 1; }
+  local last=-1 count
+  for _ in $(seq 1 40); do
+    count=$(list_devices | wc -l)
+    (( count > 0 && count == last )) && break
+    last=$count
+    sleep 3
+  done
+  cmd_restore || true
+  if (( server > 0 )); then wait "$server" || true; fi
+}
+
+cmd_mode() {
+  need_openrgb
+  local mode=${1:-} dev=${2:-}
+  [[ -n $mode ]] || { echo "mode needs a name, like rainbow" >&2; exit 1; }
+  [[ -z $dev || $dev =~ ^[0-9]+$ ]] || { echo "device must be a number" >&2; exit 1; }
+  [[ $DEMO == 1 ]] && return 0
+  local args=()
+  [[ -n $dev ]] && args=(-d "$dev")
+  openrgb "${args[@]}" -m "$mode" >/dev/null
+  # A mode is the opposite of a saved colour: do not bring the old colour back at login.
+  [[ -z $dev ]] && rm -f "$CONFIG"
+  return 0
+}
+
+case ${1:-} in
+  state) cmd_state ;;
+  install) cmd_install ;;
+  install-now) cmd_install_now ;;
+  color) shift; cmd_color "$@" ;;
+  off) cmd_color 000000 ;;
+  restore) cmd_restore ;;
+  serve) cmd_serve ;;
+  mode) shift; cmd_mode "$@" ;;
+  -h | --help | help | "") usage ;;
+  *) usage >&2; exit 1 ;;
+esac

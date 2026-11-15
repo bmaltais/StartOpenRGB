@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.bmaltais.startopenrgb",
+  "name": "StartOpenRGB",
+  "version": "0.1.0",
+  "author": "Bernard Maltais",
+  "license": "MIT",
+  "description": "Set the RGB lights of your machine from Omarchy: a colour picker window, a bar icon, and OpenRGB installed for you if it is missing.",
+  "kinds": [
+    "service",
+    "bar-widget"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "StartOpenRGB",
+    "description": "Open the StartOpenRGB window from the bar to set the colour of your lights.",
+    "category": "System",
+    "aliases": ["rgb", "lights", "openrgb", "led"],
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {},
+    "schema": []
+  },
+  "homepage": "https://github.com/bmaltais/StartOpenRGB"
+}
